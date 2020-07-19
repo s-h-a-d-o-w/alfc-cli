@@ -9,39 +9,11 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using System.Security.Principal;
 
-// In my tests, "weighedhigh.txt" took 5 sec. to spin up when hitting 90 vs. 30 sec. with "weighedlow.txt".
-
-// Apparently, points in the curve need to be spaced out, since some internal interpolation happens.
-// If e.g. lots of points are set at 40:15 and only one at 90:100, fans will be slow to spin up (but also slow to spin down).
-// Conversely, if only one is set at 40:15, fans will spin up immediately.
-
-// Only 0-13 are configurable, 14 is always 100% at 90 degrees, for safety reasons.
-// If less than 14 points are provided, last one is repeated.
-
-// TODO: Shortcuts for function keys to switch between fan profiles?
-// Maybe replicate this using wmi from npmjs?
-// Electron for an easily extensible, TS-based UI?
-
-// Fan speed: 0-229
-// Max. fan curve indices: 0-14 (At least that's what Gigabyte uses and there's probably limited space wherever this data gets pushed.)
-//      !!! Need to supply speeds for all indices, otherwise unpredictable behavior (well... maybe people who know the 
-//          ins and outs of the drivers know why it behaves the way it does) happens !!!
-// Temperature range: Probably 40-100 but it only makes sense to have 40-89 configurable.
-
-// At least on my machine, 16% (~1420 RPM) is maximum with no whine.
-
 public class Program
 {
   public static int Main(string[] args)
   {
-    bool isElevated;
-    using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
-    {
-      WindowsPrincipal principal = new WindowsPrincipal(identity);
-      isElevated = principal.IsInRole(WindowsBuiltInRole.Administrator);
-    }
-
-    if (!isElevated)
+    if (!AreWeElevated())
     {
       Console.WriteLine("This tool needs to be run as administrator.");
       return 1;
@@ -50,46 +22,31 @@ public class Program
     if (args.Length != 1)
     {
       Console.WriteLine("You need to provide the file name for a profile.");
-    }
-
-
-    List<byte[]> curvePoints = new List<byte[]>();
-
-    string line;
-    StreamReader file;
-
-    try
-    {
-      file = new StreamReader(args[0]);
-      // file = new StreamReader("no_whine.txt");
-      // file = new StreamReader("fixed30.txt");
-    }
-    catch
-    {
-      Console.WriteLine(@"Profile not found.");
       return 1;
     }
 
-    while ((line = file.ReadLine()) != null)
+    StreamReader file;
+    try
     {
-      try
-      {
-        curvePoints.Add(line.Split(':').Select(Byte.Parse).ToArray());
-      }
-      catch (Exception ex)
-      {
-        Console.WriteLine("Each line has to be \"temperature:fan speed percentage\" (integers).");
-        Console.WriteLine("Something is wrong here:");
-        Console.WriteLine(line);
-
-        file.Close();
-        return 1;
-      }
+      file = new StreamReader(args[0]);
+    }
+    catch
+    {
+      Console.WriteLine("Profile not found.");
+      return 1;
     }
 
-    file.Close();
+    List<byte[]> curvePoints;
+    try
+    {
+      curvePoints = ReadProfile(file);
+    }
+    catch
+    {
+      return 1;
+    }
 
-    if (SanityCheck(curvePoints))
+    if (PassesSanityCheck(curvePoints))
     {
       // Initialize various things, make sure they weren't set differently 
       // by e.g. Gigabyte Control Center
@@ -105,7 +62,7 @@ public class Program
         temp = curvePoints[i][0];
         percent = curvePoints[i][1];
 
-        Console.WriteLine("Fan curve index " + i + " - " + temp + "℃: " + percent + "%");
+        Console.WriteLine("Fan curve index " + i + " - " + temp + "°C: " + percent + "%");
         setFanLevel_Wmi(i, temp, FanPercentToSpeed(percent));
       }
 
@@ -120,7 +77,42 @@ public class Program
     return 0;
   }
 
-  public static bool SanityCheck(List<byte[]> curvePoints)
+  public static bool AreWeElevated()
+  {
+    using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+    {
+      WindowsPrincipal principal = new WindowsPrincipal(identity);
+      return principal.IsInRole(WindowsBuiltInRole.Administrator);
+    }
+  }
+
+  public static List<byte[]> ReadProfile(StreamReader file)
+  {
+    List<byte[]> curvePoints = new List<byte[]>();
+    string line;
+
+    while ((line = file.ReadLine()) != null)
+    {
+      try
+      {
+        curvePoints.Add(line.Split(':').Select(Byte.Parse).ToArray());
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine("Each line has to be \"temperature:fan speed percentage\" (integers).");
+        Console.WriteLine("Something is wrong here:");
+        Console.WriteLine(line);
+
+        file.Close();
+        throw ex;
+      }
+    }
+
+    file.Close();
+    return curvePoints;
+  }
+
+  public static bool PassesSanityCheck(List<byte[]> curvePoints)
   {
     if (curvePoints.Count() != 15)
     {
@@ -166,28 +158,22 @@ public class Program
     return true;
   }
 
-  public static void SetFixedFanSpeed(byte percent)
-  {
-    // double tempSpacing = (90 - 40) / 13.0;
-    for (byte i = 0; i <= 13; i++)
-    {
-      setFanLevel_Wmi(i, (byte)40, FanPercentToSpeed(percent));
-    }
-  }
-
   public static byte FanPercentToSpeed(byte percent)
   {
     return (byte)((percent / 100.0) * 229);
   }
 
-
+  // ========================================================================
   // METHODS BELOW ARE FROM DEEPFAN.DLL AND LARGELY LEFT UNTOUCHED
-  // This was done so that they can still be easily referenced in the original DeepFan.dll in the future.
+  // ------------------------------------------------------------------------
+  // This was done so that they can still be easily referenced in the original DeepFan.dll.
 
-  // At Helpers:986, it can be seen that setFanLevel_Wmi is used without waiting between calls.
+  // Around Helpers:986 (in DeepFan.dll), it can be seen that setFanLevel_Wmi() is used without waiting between calls.
   // Which is probably why when switching from e.g. Gaming to Custom fan curve, it is applied basically immediately 
-  // and it is only applied slowly if one hits "Apply" within the custom fan curve interface. Whyever that may 
-  // may be...
+  // and it is only applied slowly if one hits "Apply" within the custom fan curve interface. Whyever they may 
+  // have decided to do that.
+  // ========================================================================
+
   public static void setFanLevel_Wmi(byte Index, byte Temperture, byte Value)
   {
     try
