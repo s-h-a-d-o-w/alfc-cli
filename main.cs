@@ -91,8 +91,6 @@ public class Program
 
     if (SanityCheck(curvePoints))
     {
-      // InterpolateMissingPoints(curvePoints);
-
       // Initialize various things, make sure they weren't set differently 
       // by e.g. Gigabyte Control Center
       SetCurrentFanStep(0);
@@ -120,36 +118,6 @@ public class Program
     }
 
     return 0;
-  }
-
-  public static void InterpolateMissingPoints(List<byte[]> curvePoints)
-  {
-    Func<byte[], double> vectorLength = vector => Math.Sqrt(vector[0] * vector[0] + vector[1] * vector[1]);
-    Func<byte[], byte[], byte[]> vectorSubtraction = (a, b) => new byte[2] { (byte)(b[0] - a[0]), (byte)(b[1] - a[1]) };
-    Func<byte[], byte[], byte[]> midPoint = (a, b) => new byte[2] { (byte)(a[0] + 0.5 * (b[0] - a[0])), (byte)(a[1] + 0.5 * (b[1] - a[1])) };
-
-    curvePoints.Add(new byte[] { 90, 100 });
-
-    int pointsToInsert = 15 - curvePoints.Count();
-    int startIdx;
-    for (int i = 0; i < pointsToInsert; i++)
-    {
-      // Find beginning index for longest curve segment
-      startIdx = -1;
-
-      double maxLength = 0;
-      for (int j = 0; j < curvePoints.Count() - 1; j++)
-      {
-        double length = vectorLength(vectorSubtraction(curvePoints[j], curvePoints[j + 1]));
-        if (length > maxLength)
-        {
-          maxLength = length;
-          startIdx = j;
-        }
-      }
-
-      curvePoints.Insert(startIdx + 1, midPoint(curvePoints[startIdx], curvePoints[startIdx + 1]));
-    }
   }
 
   public static bool SanityCheck(List<byte[]> curvePoints)
