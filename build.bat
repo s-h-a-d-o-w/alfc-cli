@@ -1,1 +1,1 @@
-csc /out:afc.exe main.cs
+csc /out:alfc.exe main.cs
