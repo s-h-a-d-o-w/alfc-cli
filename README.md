@@ -1,6 +1,6 @@
 # Aorus Laptop Fan Control
 
-**NOTE: Everything must be run from an admin prompt.**
+**NOTE: Everything must be run from an admin command prompt.**
 
 This tool was tested on a Gigabyte Aorus 15G. It was made possible by 
 the discussion [here](https://www.reddit.com/r/gigabyte/comments/h0zpfg/aero_15_deep_fan_controlcenter_fix/).
@@ -23,9 +23,8 @@ Sample profiles can simply be taken from the root of this repo. (Note that `dens
 
 ## Creating a login task for Task Scheduler
 
-```
-create_login_task profile.txt
-```
+1. Clone/download repo
+2. Run: `create_login_task <profile name>.txt`
 
 If the task already exists, it will be overwritten - in case you change your mind about 
 which profile to use. It is run 1 minute after login, to ensure that all Gigabyte things 
@@ -55,6 +54,9 @@ get that point density up.
 ## Development Notes
 
 This is the first thing I've written in C#, so if the code doesn't look pretty, that's why. ;)
+
+And for those not familiar with it - `csc` is a stand-alone C# compiler that doesn't require 
+for Visual Studio to be installed.
 
 ## TODO
 
