@@ -25,6 +25,18 @@ public class Program
       return 1;
     }
 
+    if (args[0] == "--status")
+    {
+      Console.WriteLine("RPM Fan 1: " + GetRpm(1));
+      Console.WriteLine("RPM Fan 2: " + GetRpm(2));
+      for (int i = 0; i < 15; i++)
+      {
+        Tuple<byte, byte> fanLevel = getFanLevel_Wmi(i);
+        Console.WriteLine("Fan curve index " + i + " - " + fanLevel.Item1 + "°C: " + FanSpeedtoPercent(fanLevel.Item2) + "%");
+      }
+      return 0;
+    }
+
     StreamReader file;
     try
     {
@@ -77,7 +89,9 @@ public class Program
     return 0;
   }
 
-  public static bool AreWeElevated()
+  // HELPER METHODS
+  // ==================================
+  private static bool AreWeElevated()
   {
     using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
     {
@@ -86,33 +100,17 @@ public class Program
     }
   }
 
-  public static List<byte[]> ReadProfile(StreamReader file)
+  private static byte FanPercentToSpeed(byte percent)
   {
-    List<byte[]> curvePoints = new List<byte[]>();
-    string line;
-
-    while ((line = file.ReadLine()) != null)
-    {
-      try
-      {
-        curvePoints.Add(line.Split(':').Select(Byte.Parse).ToArray());
-      }
-      catch (Exception ex)
-      {
-        Console.WriteLine("Each line has to be \"temperature:fan speed percentage\" (integers).");
-        Console.WriteLine("Something is wrong here:");
-        Console.WriteLine(line);
-
-        file.Close();
-        throw ex;
-      }
-    }
-
-    file.Close();
-    return curvePoints;
+    return (byte)(Math.Ceiling((percent / 100.0) * 229));
   }
 
-  public static bool PassesSanityCheck(List<byte[]> curvePoints)
+  private static byte FanSpeedtoPercent(byte speed)
+  {
+    return (byte)((speed / 229.0) * 100);
+  }
+
+  private static bool PassesSanityCheck(List<byte[]> curvePoints)
   {
     if (curvePoints.Count() != 15)
     {
@@ -158,21 +156,124 @@ public class Program
     return true;
   }
 
-  public static byte FanPercentToSpeed(byte percent)
+  private static List<byte[]> ReadProfile(StreamReader file)
   {
-    return (byte)((percent / 100.0) * 229);
+    List<byte[]> curvePoints = new List<byte[]>();
+    string line;
+
+    while ((line = file.ReadLine()) != null)
+    {
+      try
+      {
+        curvePoints.Add(line.Split(':').Select(Byte.Parse).ToArray());
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine("Each line has to be \"temperature:fan speed percentage\" (integers).");
+        Console.WriteLine("Something is wrong here:");
+        Console.WriteLine(line);
+
+        file.Close();
+        throw ex;
+      }
+    }
+
+    file.Close();
+    return curvePoints;
+  }
+
+  // WMI METHODS (by @s-h-a-d-o-w)
+  // ==================================
+  private static int GetRpm(int oneOrTwo)
+  {
+    ManagementBaseObject result = CallWmiGet("getRpm" + oneOrTwo);
+    if (result != null)
+    {
+      int rpm = Convert.ToUInt16(result["Data"]);
+      return (rpm & 0x00ff) << 8 | (rpm & 0xff00) >> 8;
+    }
+
+    return -1;
+  }
+
+  private static int GetSmartCharge()
+  {
+    ManagementBaseObject result = CallWmiGet("GetSmartCharge");
+    return result != null ? Convert.ToByte(result["Data"]) : -1;
+  }
+
+  private static ManagementBaseObject CallWmiGet(string methodName)
+  {
+    try
+    {
+      ManagementScope scope = new ManagementScope("root\\WMI", new ConnectionOptions
+      {
+        EnablePrivileges = true,
+        Impersonation = ImpersonationLevel.Impersonate
+      });
+      ManagementPath path = new ManagementPath("GB_WMIACPI_Get");
+      ManagementClass managementClass = new ManagementClass(scope, path, null);
+
+      using (ManagementObjectCollection.ManagementObjectEnumerator enumerator = managementClass.GetInstances().GetEnumerator())
+      {
+        if (enumerator.MoveNext())
+        {
+          ManagementObject managementObject = (ManagementObject)enumerator.Current;
+          return managementObject.InvokeMethod(methodName, null, null);
+        }
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine(ex);
+    }
+
+    return null;
   }
 
   // ========================================================================
   // METHODS BELOW ARE FROM DEEPFAN.DLL AND LARGELY LEFT UNTOUCHED
   // ------------------------------------------------------------------------
   // This was done so that they can still be easily referenced in the original DeepFan.dll.
+  // Also so that the .exe can work without DeepFan.dll.
 
   // Around Helpers:986 (in DeepFan.dll), it can be seen that setFanLevel_Wmi() is used without waiting between calls.
   // Which is probably why when switching from e.g. Gaming to Custom fan curve, it is applied basically immediately 
   // and it is only applied slowly if one hits "Apply" within the custom fan curve interface. Whyever they may 
   // have decided to do that.
   // ========================================================================
+  // testUsercontrolDll.Helpers
+  // Token: 0x060000D6 RID: 214 RVA: 0x00014FB0 File Offset: 0x000131B0
+  public static Tuple<byte, byte> getFanLevel_Wmi(int level)
+  {
+    try
+    {
+      ManagementScope scope = new ManagementScope("root\\WMI", new ConnectionOptions
+      {
+        EnablePrivileges = true,
+        Impersonation = ImpersonationLevel.Impersonate
+      });
+      ManagementPath path = new ManagementPath("GB_WMIACPI_Get");
+      ManagementClass managementClass = new ManagementClass(scope, path, null);
+      ManagementBaseObject methodParameters = managementClass.GetMethodParameters("GetFanIndexValue");
+      methodParameters["Index"] = level;
+      using (ManagementObjectCollection.ManagementObjectEnumerator enumerator = managementClass.GetInstances().GetEnumerator())
+      {
+        if (enumerator.MoveNext())
+        {
+          ManagementObject managementObject = (ManagementObject)enumerator.Current;
+          ManagementBaseObject managementBaseObject = managementObject.InvokeMethod("GetFanIndexValue", methodParameters, null);
+          return new Tuple<byte, byte>((byte)managementBaseObject["Temperture"], (byte)managementBaseObject["Value"]);
+        }
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine(ex);
+    }
+
+    return new Tuple<byte, byte>(0, 0);
+  }
 
   public static void setFanLevel_Wmi(byte Index, byte Temperture, byte Value)
   {
@@ -358,5 +459,4 @@ public class Program
       Console.WriteLine("Exception: SetFanSpeed");
     }
   }
-
 }
