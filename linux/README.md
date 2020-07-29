@@ -45,6 +45,9 @@ want the fans to spin up to which speed.
 No worries about CPU usage. Since the temperatures are only checked every 
 two seconds, this script consumes next to nothing.
 
+Also no worries about temperature only being checked every two seconds - 
+some of the profiles this laptop ships with react a lot slower than that.
+
 ### Reason for the differences
 
 I don't know why (let me know if you do) but contrary to Windows, setting the fan 
@@ -52,6 +55,10 @@ curve points doesn't work. **All** ACPI calls I've tried worked **except** for t
 one to set those points.
 
 ### Notes on how it works and more on the differences
+
+CPU and GPU curves are both evaluated against the current temperatures and 
+whichever results in the higher fan speed is applied for both fans. This is done 
+because of the mostly shared heat pipes.
 
 With some more fine-tuning, this could potentially turn out even better than the 
 Windows version, since it e.g. allows for control over how quickly the fans 
