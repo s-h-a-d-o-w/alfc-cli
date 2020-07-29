@@ -35,3 +35,30 @@ node . CPU.txt GPU.txt
 node . --status
 node . --debug CPU.txt GPU.txt
 ```
+
+## Differences to the Windows version
+
+- This needs to keep running, since it actively controls the fans.
+- No need to specify 15 curve points, just the temperatures at which you 
+want the fans to spin up to which speed.
+
+No worries about CPU usage. Since the temperatures are only checked every 
+two seconds, this script consumes next to nothing.
+
+### Reason for the differences
+
+I don't know why (let me know if you do) but contrary to Windows, setting the fan 
+curve points doesn't work. **All** ACPI calls I've tried worked **except** for the 
+one to set those points.
+
+### Notes on how it works and more on the differences
+
+With some more fine-tuning, this could potentially turn out even better than the 
+Windows version, since it e.g. allows for control over how quickly the fans 
+should ramp up or down. Currently, ramping up happens from one "cycle" (two seconds) 
+to the next while ramping down is done only once the fan speed is supposed to be lowered 
+for three consecutive cycles. This is to avoid erratic fan behavior.
+
+Plus, no built-in "smart" behavior that you have to try to work with by putting 
+multiple curve points close together. Just straightforward declaration of certain 
+thresholds.
