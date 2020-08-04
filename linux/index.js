@@ -9,8 +9,10 @@ const {
   setCall,
 } = require('./acpi');
 
-const WAIT_RAMP_DOWN_CYCLES = 3;
-const CYCLE_DURATION = 2000;
+const WAIT_RAMP_DOWN_CYCLES = 10;
+const WAIT_RAMP_UP_CYCLES = 1;
+const CYCLE_DURATION = 1000;
+const TEMP_POLL_INTERVAL = 200;
 
 function fanSpeedToPercent(speed) {
   return (speed / 229.0) * 100;
@@ -20,11 +22,16 @@ function fanPercentToSpeed(percent) {
   return (percent / 100.0) * 229;
 }
 
+// Each number in the provided array is assumed to be a byte.
 function numbersToHexString(numbers) {
   return '0x' + Buffer.from(numbers).toString('hex');
 }
 
 function printStatus() {
+  // GetFanIndexValue
+  // const index = 3;
+  // console.log(`Fan Index ${index} Value: ${readCall("0x68", numbersToHexString([index]))}`);
+
   // GetAutoFanStatus
   console.log('Auto Fan: ' + readCallBoolean("0x71"));
   // // GetStepFanStatus
@@ -39,10 +46,8 @@ function printStatus() {
   // // GetFixedFanStatus
   console.log('RPM2: ' + readCallLittleEndianWord("0xe5"));
 
-  // GetNvPowerConfig
-  console.log('NV Power Config: ' + readCall("0x51"));
-  // GetNvThermalTarget
-  console.log('NV Thermal Target: ' + readCall("0x57"));
+  // GetAIBoostStatus
+  console.log('GPU Boost Status: ' + readCallBoolean("0x81"));
 }
 
 // Both CPU and GPU fan are set to the same speed 
@@ -70,10 +75,16 @@ function readProfile(profilePath) {
   return fanTable;
 }
 
-function runStepped(profileCPU, profileGPU, isDebug) {
+function fanControl(profileCPU, profileGPU, isDebug) {
   const cpuTable = readProfile(profileCPU);
   const gpuTable = readProfile(profileGPU);
 
+  // SetQuietMode(0);
+  setCall('0x58', '0');
+  // SetAutoFanStatus(false);
+  setCall('0x71', '0');
+  // SetStepFanStatus(false);
+  setCall('0x67', '0');
   // SetFixedFanStatus(true)
   setCall('0x6a', '0x1');
 
@@ -93,43 +104,76 @@ function runStepped(profileCPU, profileGPU, isDebug) {
     return highestMatch;
   }
 
-  let previousSpeed = 0;
   let appliedSpeed = 0;
   let currRampDownCycle = 0;
-  setInterval(() => {
-    // getCpuTemperature
-    const currCPUTemp = readCallInt("0xe1");
-    // getGpuTemperature1
-    const currGPUTemp1 = readCallInt("0xe2");
-    // getGpuTemperature2
-    const currGPUTemp2 = readCallInt("0xe3");
-    const currGPUTemp = Math.max(currGPUTemp1, currGPUTemp2);
-    isDebug && console.log(`CPU and GPU1/GPU2 temperatures: ${currCPUTemp} ${currGPUTemp1}/${currGPUTemp2}`);
+  let currRampUpCycle = 0;
+  setInterval(async () => {
+    const {avgCPUTemp, avgGPUTemp} = await new Promise((resolve) => {
+      const CPUTemps = [];
+      const GPUTemps = [];
+      const pushTemps = () => {
+        // getCpuTemperature
+        const currCPUTemp = readCallInt("0xe1");
+        // getGpuTemperature1
+        const currGPUTemp1 = readCallInt("0xe2");
+        // getGpuTemperature2
+        const currGPUTemp2 = readCallInt("0xe3");
+        const currGPUTemp = Math.max(currGPUTemp1, currGPUTemp2);
+        // isDebug && console.log(`CPU and GPU1/GPU2 temperatures: ${currCPUTemp} ${currGPUTemp1}/${currGPUTemp2}`);
 
-    const highestMatchCPU = findHighestMatch(currCPUTemp, cpuTable);
-    const highestMatchGPU = findHighestMatch(currGPUTemp, gpuTable);
+        CPUTemps.push(currCPUTemp);
+        GPUTemps.push(currGPUTemp);
+
+        if(CPUTemps.length === Math.round((CYCLE_DURATION - TEMP_POLL_INTERVAL) / TEMP_POLL_INTERVAL)) {
+          resolve({
+            avgCPUTemp: CPUTemps.reduce((sum, temp) => sum + temp) / CPUTemps.length,
+            avgGPUTemp: GPUTemps.reduce((sum, temp) => sum + temp) / GPUTemps.length
+          });
+        } else {
+          setTimeout(pushTemps, TEMP_POLL_INTERVAL);
+        }
+      };
+      pushTemps();
+    });
+    
+    const highestMatchCPU = findHighestMatch(avgCPUTemp, cpuTable);
+    const highestMatchGPU = findHighestMatch(avgGPUTemp, gpuTable);
 
     // Target speed is whichever one of the two is higher because 
     // of the mostly shared heat pipes.
     const target = Math.max(highestMatchCPU[1], highestMatchGPU[1]);
-    isDebug && console.log('Target %: ' + target);
+    // isDebug && console.log('Target %: ' + target);
 
-    if (previousSpeed < target) {
-      isDebug && console.log('Applying %: ' + target);
-      setFixedFan(target);
-      currRampDownCycle = 0;
-      appliedSpeed = target;
+    if (appliedSpeed < target) {
+      if(currRampUpCycle === WAIT_RAMP_UP_CYCLES) {
+        isDebug && console.log(`Average CPU and GPU temperatures: ${avgCPUTemp}/${avgGPUTemp}`);
+        isDebug && console.log('Applying %: ' + target);
+        setFixedFan(target);
+
+        currRampDownCycle = 0;
+        currRampUpCycle = 0;
+        appliedSpeed = target;
+      } else {
+        currRampUpCycle++;
+      }
     } else if(target < appliedSpeed) {
       // Make fan behavior less erratic by waiting a few cycles until we 
       // ramp down.
-      currRampDownCycle++;
       if(currRampDownCycle === WAIT_RAMP_DOWN_CYCLES) {
+        isDebug && console.log(`Average CPU and GPU temperatures: ${avgCPUTemp}/${avgGPUTemp}`);
         isDebug && console.log('Applying %: ' + target);
         setFixedFan(target);
-      }
-    }
 
-    previousSpeed = target;
+        currRampDownCycle = 0;
+        currRampUpCycle = 0;
+        appliedSpeed = target;
+      } else {
+        currRampDownCycle++;
+      }
+    } else {
+      currRampDownCycle = 0;
+      currRampUpCycle = 0;
+    }
   }, CYCLE_DURATION);
 }
 
@@ -170,10 +214,11 @@ if (process.argv.length < 3) {
     printStatus();
   } else {
     const isDebug = process.argv[2] === "--debug";
-    runStepped(
+    fanControl(
       path.join(__dirname, process.argv[isDebug ? 3 : 2]),
       path.join(__dirname, process.argv[isDebug ? 4 : 3]),
       isDebug
     );
+    console.log('Aorus Fan Control is running');
   }
 }

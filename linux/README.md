@@ -1,8 +1,21 @@
 # Aorus Laptop Fan Control
 
+## Changelog
+
+### 2020-08-04
+
+Refined algorithm that decides when to spin up. It tends to ignore brief spikes now. As 
+the fans take about a second to ramp up, they wouldn't be of help anyway unless the CPU/GPU 
+stays hot for more than 2-3 seconds.
+
+And so now it collects temperatures every 200 ms and only ramps up if the average temperature 
+wants to trigger a fan speed increase for 2 seconds.
+
 ## Prerequisites
 
-- Node.js
+- Node.js (if you don't use it yourself, a global install via the NodeSource repo is probably best 
+(people who regularly work with it tend to use `nvm`), especially considering that that is needed 
+to set up a systemd unit anyway.)
 - Installation of [this kernel module](https://github.com/s-h-a-d-o-w/acpi_call). (Enables issuing of fan control commands.)
 
 Linux pros - feel free to contribute to the following guide! 🙂
@@ -29,12 +42,51 @@ before this script.
 Clone this repo and in this directory (`linux`), do the following:
 
 ```
-node . CPU.txt GPU.txt
+sudo node . CPU.txt GPU.txt
 
 # or to print some information...
-node . --status
-node . --debug CPU.txt GPU.txt
+sudo node . --status
+sudo node . --debug CPU.txt GPU.txt
 ```
+
+## Creating startup services
+
+Personally, I used systemd for it. For `acpi_call` at `/etc/systemd/system/acpi_call.service`:
+
+```
+[Unit]
+Description=acpi_call
+
+[Service]
+Type=oneshot
+ExecStart=modprobe acpi_call
+
+[Install]
+WantedBy=default.target
+```
+
+And one for this script which requires a global Node.js installation e.g. via the NodeSource repository. Then at 
+`etc/systemd/system/alfc.service`:
+
+```
+[Unit]
+Description=Aorus Laptop Fan Control
+After=acpi_call
+
+[Service]
+WorkingDirectory=/<path to where you cloned/downloaded repo>/linux
+ExecStart=/usr/bin/node . CPU.txt GPU.txt
+
+[Install]
+WantedBy=default.target
+```
+
+Once this is in place, you can also still experiment with the settings 
+by editing `CPU.txt` and `GPU.txt` and then running `sudo systemctl 
+restart alfc.service` in `/etc/systemd/system`.
+
+You can also use the `--debug` switch in `ExecStart` of the `alfc` unit and 
+look at logs using `sudo systemctl status -n <number of lines> alfc.service`.
 
 ## Differences to the Windows version
 
@@ -69,3 +121,14 @@ for three consecutive cycles. This is to avoid erratic fan behavior.
 Plus, no built-in "smart" behavior that you have to try to work with by putting 
 multiple curve points close together. Just straightforward declaration of certain 
 thresholds.
+
+## Wishlist
+
+- To further reduce erratic fan behavior: Temperature should probably be retrieved 
+more often (maybe use the object instead of the method for that?) and the decision on 
+what fan speed would currently need to be applied be based on the average of the 
+last 4 data points or so.
+
+- More elegant? => Would it be possible to simply keep write/read handles to 
+`/proc/acpi/call` open instead of using shell commands to write/read to/from it?
+Maybe [similar to this](https://stackoverflow.com/a/25437387/5040168).

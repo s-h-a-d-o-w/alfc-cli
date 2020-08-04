@@ -3,9 +3,10 @@ const { execSync } = require('child_process');
 // Read calls also always expect 3 arguments.
 // IF something really needs to be specified, it's packed into the 3rd argument, like with write.
 // Otherwise, it's simply not used.
-function readCall(commandId) {
-  execSync(`echo '\\_SB_.PCI0.AMW0.WMBC 0 ${commandId} 0' | sudo tee /proc/acpi/call`);
-  return execSync("sudo cat /proc/acpi/call", { encoding: 'utf8' });
+// @return Multiple values are returned in a single number, little endian!
+function readCall(commandId, hexString = 0) {
+  execSync(`echo '\\_SB_.PCI0.AMW0.WMBC 0 ${commandId} ${hexString}' | tee /proc/acpi/call`);
+  return execSync("cat /proc/acpi/call", { encoding: 'utf8' });
 }
 
 function readCallBoolean(commandId) {
@@ -17,13 +18,20 @@ function readCallInt(commandId) {
 }
 
 function readCallLittleEndianWord(commandId) {
-  const result = readCall(commandId).split('');
-  const swappedBytes = '0x' + result[4] + result[5] + result[2] + result[3];
+  const result = readCall(commandId);
+  
+  const resultWithoutTerminator = result.substr(0, result.length - 1);
+  if(resultWithoutTerminator === '0x0') {
+    return 0;
+  }
+
+  const splitResult = result.split('');
+  const swappedBytes = '0x' + splitResult[4] + splitResult[5] + splitResult[2] + splitResult[3];
   return parseInt(swappedBytes, 16);
 }
 
 function setCall(commandId, hexString) {
-  execSync(`echo '\\_SB_.PCI0.AMW0.WMBD 0 ${commandId} ${hexString}' | sudo tee /proc/acpi/call`);
+  execSync(`echo '\\_SB_.PCI0.AMW0.WMBD 0 ${commandId} ${hexString}' | tee /proc/acpi/call`);
 }
 
 module.exports = {
