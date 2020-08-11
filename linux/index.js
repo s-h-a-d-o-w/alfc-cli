@@ -88,6 +88,9 @@ function fanControl(profileCPU, profileGPU, isDebug) {
   // SetFixedFanStatus(true)
   setCall('0x6a', '0x1');
 
+  // Slowest fan speed on startup
+  setFixedFan(cpuTable[0][1]);
+
   // Find highest entry that isn't larger than provided temp,
   // assuming that fan table entries in profiles are ascending.
   function findHighestMatch(temperature, table) {
