@@ -16,7 +16,7 @@ wants to trigger a fan speed increase for 2 seconds.
 - Node.js (if you don't use it yourself, a global install via the NodeSource repo is probably best 
 (people who regularly work with it tend to use `nvm`), especially considering that that is needed 
 to set up a systemd unit anyway.)
-- Installation of [this kernel module](https://github.com/s-h-a-d-o-w/acpi_call). (Enables issuing of fan control commands.)
+- Installation of [this kernel module](https://github.com/nix-community/acpi_call). (Enables issuing of fan control commands.)
 
 Linux pros - feel free to contribute to the following guide! 🙂
 

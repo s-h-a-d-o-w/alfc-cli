@@ -3,14 +3,17 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Win32;
 using System.Security.Principal;
 
 public class Program
 {
+  private static ManagementObject wmiGetObject;
+  private static ManagementObject wmiSetObject;
+  private static ManagementClass wmiGetClass;
+  private static ManagementClass wmiSetClass;
+
   public static int Main(string[] args)
   {
     if (!AreWeElevated())
@@ -21,19 +24,27 @@ public class Program
 
     if (args.Length != 1)
     {
-      Console.WriteLine("You need to provide the file name for a profile.");
+      Console.WriteLine("Syntax:");
+      Console.WriteLine("alfc <profile filename>");
+      Console.WriteLine("OR");
+      Console.WriteLine("alfc --status");
       return 1;
     }
+
+    InitWmi();
 
     if (args[0] == "--status")
     {
       Console.WriteLine("RPM Fan 1: " + GetRpm(1));
       Console.WriteLine("RPM Fan 2: " + GetRpm(2));
-      for (int i = 0; i < 15; i++)
-      {
-        Tuple<byte, byte> fanLevel = getFanLevel_Wmi(i);
-        Console.WriteLine("Fan curve index " + i + " - " + fanLevel.Item1 + "°C: " + FanSpeedtoPercent(fanLevel.Item2) + "%");
-      }
+      Tuple<byte, byte> fanLevel = GetFanIndexValue(3);
+      Console.WriteLine("Fan curve index " + 3 + " - " + fanLevel.Item1 + "°C: " + FanSpeedtoPercent(fanLevel.Item2) + "%");
+      Console.WriteLine("Smart Charge: " + GetSmartCharge());
+      // for (int i = 0; i < 15; i++)
+      // {
+      //   Tuple<byte, byte> fanLevel = getFanLevel_Wmi(i);
+      //   Console.WriteLine("Fan curve index " + i + " - " + fanLevel.Item1 + "°C: " + FanSpeedtoPercent(fanLevel.Item2) + "%");
+      // }
       return 0;
     }
 
@@ -184,6 +195,14 @@ public class Program
 
   // WMI METHODS (by @s-h-a-d-o-w)
   // ==================================
+  private static Tuple<byte, byte> GetFanIndexValue(int index)
+  {
+    ManagementBaseObject result = CallWmiGet("GetFanIndexValue", new Dictionary<string, int>() {
+      {"index", index}
+    });
+    return new Tuple<byte, byte>((byte)result["Temperture"], (byte)result["Value"]);
+  }
+
   private static int GetRpm(int oneOrTwo)
   {
     ManagementBaseObject result = CallWmiGet("getRpm" + oneOrTwo);
@@ -202,30 +221,47 @@ public class Program
     return result != null ? Convert.ToByte(result["Data"]) : -1;
   }
 
-  private static ManagementBaseObject CallWmiGet(string methodName)
+  private static void InitWmi()
   {
-    try
-    {
-      ManagementScope scope = new ManagementScope("root\\WMI", new ConnectionOptions
-      {
-        EnablePrivileges = true,
-        Impersonation = ImpersonationLevel.Impersonate
-      });
-      ManagementPath path = new ManagementPath("GB_WMIACPI_Get");
-      ManagementClass managementClass = new ManagementClass(scope, path, null);
+    Tuple<ManagementClass, ManagementObject> getTuple = GetWmiClassAndObject("GB_WMIACPI_Get");
+    Tuple<ManagementClass, ManagementObject> setTuple = GetWmiClassAndObject("GB_WMIACPI_Set");
+    wmiGetClass = getTuple.Item1;
+    wmiGetObject = getTuple.Item2;
+    wmiSetClass = setTuple.Item1;
+    wmiSetObject = setTuple.Item2;
+  }
 
-      using (ManagementObjectCollection.ManagementObjectEnumerator enumerator = managementClass.GetInstances().GetEnumerator())
+  // dynamic parameters in preparation for use with edge-js.
+  private static ManagementBaseObject CallWmiGet(string methodName, dynamic parameters = null)
+  {
+    ManagementBaseObject methodParameters = null;
+
+    if (parameters != null)
+    {
+      methodParameters = wmiGetClass.GetMethodParameters(methodName);
+      foreach (var property in (IDictionary<string, int>)parameters)
       {
-        if (enumerator.MoveNext())
-        {
-          ManagementObject managementObject = (ManagementObject)enumerator.Current;
-          return managementObject.InvokeMethod(methodName, null, null);
-        }
+        methodParameters[property.Key] = property.Value;
       }
     }
-    catch (Exception ex)
+
+    return wmiGetObject.InvokeMethod(methodName, methodParameters, null);
+  }
+
+  private static Tuple<ManagementClass, ManagementObject> GetWmiClassAndObject(string className)
+  {
+    ManagementScope scope = new ManagementScope("root\\WMI", new ConnectionOptions
     {
-      Console.WriteLine(ex);
+      EnablePrivileges = true,
+      Impersonation = ImpersonationLevel.Impersonate
+    });
+    ManagementPath path = new ManagementPath(className);
+    ManagementClass wmiClass = new ManagementClass(scope, path, null);
+    ManagementObjectCollection.ManagementObjectEnumerator enumerator = wmiClass.GetInstances().GetEnumerator();
+
+    if (enumerator.MoveNext())
+    {
+      return new Tuple<ManagementClass, ManagementObject>(wmiClass, (ManagementObject)enumerator.Current);
     }
 
     return null;

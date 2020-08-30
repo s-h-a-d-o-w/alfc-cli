@@ -1,4 +1,14 @@
-# Aorus Laptop Fan Control
+# Superseded by the [version with a web-based UI](https://github.com/s-h-a-d-o-w/alfc)
+
+The version with UI contains improvements to the fan control and create 
+services instead of having to create tasks in task scheduler and whatnot. 
+
+
+So this repo serves mostly just as an archive for how things started out. 
+Might be useful for people who want to learn who to create such a tool 
+and for my future self. 😉
+
+# Aorus Laptop Fan Control (CLI)
 
 ## Linux => Go [HERE](./linux/README.md)
 
@@ -25,15 +35,15 @@ alfc <profile name>.txt
 Sample profiles can simply be taken from the root of this repo. (Note that `densehigh.txt` and 
 `denselow.txt` are purely for experimenting - see "Customizing profiles" below.)
 
-Current status (RPM and set fan curve points):
+Current status (RPM and stored fan curve points):
 ```
 alfc --status
 ```
 
 ### Creating tasks in Task Scheduler
 
-1. Clone/download repo
-2. Download latest release .exe or build it yourself
+1. Clone/download this repo
+2. Download latest release .exe or build it yourself and put it into the root of the repo
 3. Run: `create_tasks <profile name>.txt`
 
 If the tasks already exists, they will be overwritten - in case you change your mind about 
@@ -71,6 +81,8 @@ and I think they should always be printed.
 
 For those not familiar with it - `csc` is a stand-alone C# compiler that doesn't require 
 for Visual Studio to be installed.
+
+External dlls can be included through... [Hope I won't forget to finish this sentence.]
 
 ## Wishlist
 

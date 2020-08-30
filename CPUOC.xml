@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--Gigabyte profiles used for reference only.-->
+<ocsetting>
+  <i7 date="20200409">
+    <zero>
+      <id name="pl1" _id="48">52</id>
+      <id name="pl2" _id="47">107</id>
+    </zero>
+    <one>
+      <id name="pl1" _id="48">38</id>
+      <id name="pl2" _id="47">107</id>
+    </one>
+    <two>
+      <id name="pl1" _id="48">45</id>
+      <id name="pl2" _id="47">107</id>
+    </two>
+    <three>
+      <id name="pl1" _id="48">52</id>
+      <id name="pl2" _id="47">107</id>
+    </three>
+    <four>
+      <id name="pl1" _id="48">58</id>
+      <id name="pl2" _id="47">107</id>
+    </four>
+    <five>
+      <id name="pl1" _id="48">62</id>
+      <id name="pl2" _id="47">107</id>
+    </five>
+    <dc>
+      <id name="pl1" _id="48">45</id>
+      <id name="pl2" _id="47">56.25</id>
+    </dc>
+  </i7>
+</ocsetting>
